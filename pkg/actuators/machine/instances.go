@@ -302,6 +302,10 @@ func launchInstance(machine *machinev1.Machine, machineProviderConfig *machinev1
 		},
 	}
 
+	if machineProviderConfig.NetworkInterfaceType != "" {
+		networkInterfaces[0].InterfaceType = aws.String(string(machineProviderConfig.NetworkInterfaceType))
+	}
+
 	blockDeviceMappings, err := getBlockDeviceMappings(machineKey, machineProviderConfig.BlockDevices, *amiID, client)
 	if err != nil {
 		return nil, mapierrors.InvalidMachineConfiguration("error getting blockDeviceMappings: %v", err)
