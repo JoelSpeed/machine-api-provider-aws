@@ -302,8 +302,15 @@ func launchInstance(machine *machinev1.Machine, machineProviderConfig *machinev1
 		},
 	}
 
-	if machineProviderConfig.NetworkInterfaceType != "" {
-		networkInterfaces[0].InterfaceType = aws.String(string(machineProviderConfig.NetworkInterfaceType))
+	switch machineProviderConfig.NetworkInterfaceType {
+	case machinev1.AWSENANetworkInterfaceType:
+		networkInterfaces[0].InterfaceType = aws.String("interface")
+	case machinev1.AWSEFANetworkInterfaceType:
+		networkInterfaces[0].InterfaceType = aws.String("efa")
+	case "":
+		// Do nothing
+	default:
+		return nil, mapierrors.InvalidMachineConfiguration("invalid value for networkInterfaceType %q, valid values are \"\", \"ENA\" and \"EFA\"", machineProviderConfig.NetworkInterfaceType)
 	}
 
 	blockDeviceMappings, err := getBlockDeviceMappings(machineKey, machineProviderConfig.BlockDevices, *amiID, client)
