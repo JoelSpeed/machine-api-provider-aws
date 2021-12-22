@@ -187,6 +187,22 @@ type Placement struct {
 	// supported 3 options: default, dedicated and host.
 	// +optional
 	Tenancy InstanceTenancy `json:"tenancy,omitempty"`
+	// GroupName specifies the name of an AWS placement group to create the Machine withing.
+	// If the group specified does not exist, it will be created based on the GroupType
+	// paramenter.
+	// When a Machine is deleted, if this leaves an empty Placement Group, the group is also
+	// deleted.
+	// +optional
+	GroupName string `json:"groupName,omitempty"`
+	// GroupType specifies the type of AWS placement group to use for this Machine.
+	// This parameter is only used when a Machine is being created and the named
+	// placement group does not exist.
+	// Valid values are "Cluster", "Partition", "Spread", and omitted, which means
+	// no opinion and the platform chooses a good default which may change over time.
+	// The current default value is "Spread".
+	// +kubebuilder:validation:Enum:="Cluster";"Partition";"Spread"
+	// +optional
+	GroupType AWSPlacementGroupType `json:"groupType,omitempty"`
 }
 
 // Filter is a filter used to identify an AWS resource
@@ -256,6 +272,14 @@ const (
 	AWSENANetworkInterfaceType AWSNetworkInterfaceType = "ENA"
 	// AWSEFANetworkInterfaceType is the Elastic Fabric Adapter network interface type.
 	AWSEFANetworkInterfaceType AWSNetworkInterfaceType = "EFA"
+)
+
+type AWSPlacementGroupType string
+
+const (
+	AWSClusterPlacementGroupType AWSPlacementGroupType = "Cluster"
+	AWSPartitionPlacementGroupType AWSPlacementGroupType = "Partition"
+	AWSSpreadPlacementGroupType AWSPlacementGroupType = "Spread"
 )
 
 // AWSMachineProviderStatus is the type that will be embedded in a Machine.Status.ProviderStatus field.
