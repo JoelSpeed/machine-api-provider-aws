@@ -554,6 +554,7 @@ func checkOrCreatePlacementGroup(client awsclient.Client, placement machinev1.Pl
 		GroupName: aws.String(placement.GroupName),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
+				ResourceType: aws.String(ec2.ResourceTypePlacementGroup),
 				Tags: []*ec2.Tag{
 					{Key: aws.String("kubernetes.io/cluster/" + clusterID), Value: aws.String("owned")},
 					{Key: aws.String("Name"), Value: aws.String(placement.GroupName)},
