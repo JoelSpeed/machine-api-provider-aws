@@ -180,8 +180,9 @@ func main() {
 	}
 
 	if err = (&awsplacementgroupcontroller.Reconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("AWSPlacementGroup"),
+		Client:              mgr.GetClient(),
+		Log:                 ctrl.Log.WithName("controllers").WithName("AWSPlacementGroup"),
+		ConfigManagedClient: configManagedClient,
 	}).SetupWithManager(mgr, controller.Options{}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AWSPlacementGroup")
 		os.Exit(1)
