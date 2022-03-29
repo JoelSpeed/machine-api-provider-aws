@@ -86,11 +86,11 @@ func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlace
 		// as we don't want to delete placement group resources on AWS, if we are in Unmanaged mode
 		if controllerutil.ContainsFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer) {
 			controllerutil.RemoveFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer)
-			klog.Infof("%s: removing finalizer from AWSPlacementGroup", awsPlacementGroup.Name)
+			logger.Info("removing finalizer from AWSPlacementGroup")
 			return ctrl.Result{}, nil
 		}
 
-		klog.Infof("%s: ignoring Unmanaged AWSPlacementGroup", awsPlacementGroup.Name)
+		logger.Info("ignoring Unmanaged AWSPlacementGroup")
 		// TODO: remove requeueafter?
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
@@ -98,7 +98,7 @@ func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlace
 	if awsPlacementGroup.DeletionTimestamp.IsZero() {
 		if !controllerutil.ContainsFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer) {
 			controllerutil.AddFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer)
-			klog.Infof("%s: adding finalizer to AWSPlacementGroup", awsPlacementGroup.Name)
+			logger.Info("adding finalizer to AWSPlacementGroup")
 			return ctrl.Result{RequeueAfter: requeueAfter}, nil
 		}
 	}
