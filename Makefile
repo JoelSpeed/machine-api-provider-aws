@@ -106,7 +106,8 @@ check: fmt vet lint test # Check your code
 
 .PHONY: unit
 unit: # Run unit test
-	$(DOCKER_CMD) go test -race -cover ./cmd/... ./pkg/...
+	#$(DOCKER_CMD) go test -race -cover ./cmd/... ./pkg/...
+	$(DOCKER_CMD) go test ./pkg/actuators/awsplacementgroup/...
 
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests

@@ -179,7 +179,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&awsplacementgroupcontroller.Reconciler{
+	if err = (&awsplacementgroupcontroller.AWSPlacementGroupReconciler{
 		Client:              mgr.GetClient(),
 		Log:                 ctrl.Log.WithName("controllers").WithName("AWSPlacementGroup"),
 		ConfigManagedClient: configManagedClient,

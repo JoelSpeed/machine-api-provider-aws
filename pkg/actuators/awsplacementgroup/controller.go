@@ -29,6 +29,7 @@ import (
 
 // upstreamMachineClusterIDLabel is the label that a machine must have to identify the cluster to which it belongs
 const upstreamMachineClusterIDLabel = "sigs.k8s.io/cluster-api-cluster"
+const awsPlacementGroupFinalizer = "awsplacementgroup.machine.openshift.io"
 const requeueAfter = 10 * time.Second
 
 //
@@ -45,8 +46,8 @@ const (
 	AWSPlacementGroupConfigurationInSyncConditionReason string = "AWSPlacementGroupConfigurationInSync"
 )
 
-// Reconciler reconciles AWSPlacementGroup.
-type Reconciler struct {
+// AWSPlacementGroupReconciler reconciles AWSPlacementGroup.
+type AWSPlacementGroupReconciler struct {
 	Client              client.Client
 	Log                 logr.Logger
 	AWSClient           awsclient.Client
@@ -58,7 +59,7 @@ type Reconciler struct {
 }
 
 // SetupWithManager creates a new controller for a manager.
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, options controller.Options) error {
+func (r *AWSPlacementGroupReconciler) SetupWithManager(mgr ctrl.Manager, options controller.Options) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&machinev1.AWSPlacementGroup{}).
 		WithOptions(options).
@@ -73,7 +74,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, options controller.Optio
 	return nil
 }
 
-func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlacementGroup *machinev1.AWSPlacementGroup) (ctrl.Result, error) {
+func (r *AWSPlacementGroupReconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlacementGroup *machinev1.AWSPlacementGroup) (ctrl.Result, error) {
 	// check AWS for the configuration of the placement group and reflect this in the status of the object
 	err := reflectObservedConfiguration(r.AWSClient, awsPlacementGroup)
 	if err != nil {
@@ -84,8 +85,8 @@ func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlace
 	if awsPlacementGroup.Spec.ManagementSpec.ManagementState == machinev1.UnmanagedManagementState {
 		// this AWSPlacementGroup is now unmanaged so clean up any machine finalizer if there is any
 		// as we don't want to delete placement group resources on AWS, if we are in Unmanaged mode
-		if controllerutil.ContainsFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer) {
-			controllerutil.RemoveFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer)
+		if controllerutil.ContainsFinalizer(awsPlacementGroup, awsPlacementGroupFinalizer) {
+			controllerutil.RemoveFinalizer(awsPlacementGroup, awsPlacementGroupFinalizer)
 			logger.Info("removing finalizer from AWSPlacementGroup")
 			return ctrl.Result{}, nil
 		}
@@ -96,8 +97,8 @@ func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlace
 	}
 
 	if awsPlacementGroup.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer) {
-			controllerutil.AddFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer)
+		if !controllerutil.ContainsFinalizer(awsPlacementGroup, awsPlacementGroupFinalizer) {
+			controllerutil.AddFinalizer(awsPlacementGroup, awsPlacementGroupFinalizer)
 			logger.Info("adding finalizer to AWSPlacementGroup")
 			return ctrl.Result{RequeueAfter: requeueAfter}, nil
 		}
@@ -107,7 +108,7 @@ func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlace
 	// so clean up relevant resources
 	if !awsPlacementGroup.DeletionTimestamp.IsZero() {
 		// no-op if finalizer has been removed.
-		if !controllerutil.ContainsFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer) {
+		if !controllerutil.ContainsFinalizer(awsPlacementGroup, awsPlacementGroupFinalizer) {
 			klog.Infof("%v: reconciling AWSPlacementGroup causes a no-op as there is no finalizer", awsPlacementGroup.Name)
 			return ctrl.Result{RequeueAfter: requeueAfter}, nil
 		}
@@ -126,7 +127,7 @@ func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlace
 		}
 
 		// remove finalizer on successful deletion
-		controllerutil.RemoveFinalizer(awsPlacementGroup, machinev1beta1.MachineFinalizer)
+		controllerutil.RemoveFinalizer(awsPlacementGroup, awsPlacementGroupFinalizer)
 		klog.Infof("%s: removing finalizer on successful placement group deletion", awsPlacementGroup.Name)
 
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
@@ -140,8 +141,8 @@ func (r *Reconciler) reconcile(ctx context.Context, logger logr.Logger, awsPlace
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-// Reconcile implements controller runtime Reconciler interface.
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+// Reconcile implements controller runtime AWSPlacementGroupReconciler interface.
+func (r *AWSPlacementGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("name", req.Name, "namespace", req.Namespace)
 	logger.V(3).Info("Reconciling")
 
@@ -154,6 +155,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
+	}
+
+	if err := validateAWSPlacementGroup(awsPlacementGroup); err != nil {
+		logger.Error(err, fmt.Sprintf("AWSPlacementGroup %s is invalid", awsPlacementGroup.Name))
+		// return without erroring to avoid requeue
+		return ctrl.Result{}, nil
 	}
 
 	// get the infrastructure object
@@ -177,8 +184,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	r.Infrastructure = infra
-	r.AWSClient = awsClient
+	if r.Infrastructure == nil {
+		r.Infrastructure = infra
+	}
+
+	if r.AWSClient == nil {
+		r.AWSClient = awsClient
+	}
 
 	originalAWSPlacementGroupToPatch := client.MergeFrom(awsPlacementGroup.DeepCopy())
 
@@ -289,7 +301,7 @@ func checkOrCreatePlacementGroup(client awsclient.Client, pg *machinev1.AWSPlace
 
 	// placement group already exists
 	if len(placementGroups.PlacementGroups) == 1 {
-		if err := validatePlacementGroupConfig(pg, placementGroups.PlacementGroups[0]); err != nil {
+		if err := validateExistingPlacementGroupConfig(pg, placementGroups.PlacementGroups[0]); err != nil {
 			return err
 		}
 		setObservedConfiguration(pg, placementGroups.PlacementGroups[0])
@@ -352,9 +364,9 @@ func checkOrCreatePlacementGroup(client awsclient.Client, pg *machinev1.AWSPlace
 	return nil
 }
 
-// validatePlacementGroupConfig validates that the configuration of the existing placement group
+// validateExistingPlacementGroupConfig validates that the configuration of the existing placement group
 // matches the configuration of the AWSPlacementGroup spec
-func validatePlacementGroupConfig(pg *machinev1.AWSPlacementGroup, placementGroup *ec2.PlacementGroup) error {
+func validateExistingPlacementGroupConfig(pg *machinev1.AWSPlacementGroup, placementGroup *ec2.PlacementGroup) error {
 	if placementGroup == nil {
 		return fmt.Errorf("found nil placement group")
 	}
@@ -510,4 +522,43 @@ func setObservedConfiguration(pg *machinev1.AWSPlacementGroup, placementGroup *e
 	}
 
 	pg.Status.Conditions = setCondition(pg.Status.Conditions, condition)
+}
+
+func validateAWSPlacementGroup(pg *machinev1.AWSPlacementGroup) error {
+	// First validation should happen via webhook before the object is persisted.
+	// This is a complementary validation to fail early in case of lacking proper webhook validation.
+	// Default values can also be set here
+
+	switch pg.Spec.ManagementSpec.ManagementState {
+	case machinev1.ManagedManagementState, machinev1.UnmanagedManagementState:
+		// valid values
+	default:
+		return fmt.Errorf("invalid awsplacementgroup. spec.managementSpec.managementState must either be %s or %s",
+			machinev1.ManagedManagementState, machinev1.UnmanagedManagementState)
+	}
+
+	if pg.Spec.ManagementSpec.ManagementState == machinev1.ManagedManagementState {
+		if pg.Spec.ManagementSpec.Managed == nil {
+			return fmt.Errorf("invalid awsplacementgroup. spec.managementSpec.managed must not be nil when spec.managementSpec.managementState is %s",
+				machinev1.ManagedManagementState)
+		}
+	}
+
+	if pg.Spec.ManagementSpec.Managed != nil {
+		switch pg.Spec.ManagementSpec.Managed.GroupType {
+		case machinev1.AWSClusterPlacementGroupType, machinev1.AWSPartitionPlacementGroupType, machinev1.AWSSpreadPlacementGroupType:
+			// valid values
+		default:
+			return fmt.Errorf("invalid awsplacementgroup. spec.managementSpec.managed.groupType must either be %s, %s or %s",
+				machinev1.AWSClusterPlacementGroupType, machinev1.AWSPartitionPlacementGroupType, machinev1.AWSSpreadPlacementGroupType)
+		}
+
+		if pg.Spec.ManagementSpec.Managed.Partition != nil {
+			if pg.Spec.ManagementSpec.Managed.Partition.Count < 1 || pg.Spec.ManagementSpec.Managed.Partition.Count > 7 {
+				return fmt.Errorf("invalid awsplacementgroup. spec.managementSpec.managed.partition.count must be greater or equal than 1 and less or equal than 7")
+			}
+		}
+	}
+
+	return nil
 }

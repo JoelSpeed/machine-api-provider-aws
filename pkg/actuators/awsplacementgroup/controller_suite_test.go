@@ -4,9 +4,11 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	machinev1 "github.com/openshift/api/machine/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -14,6 +16,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
+
+	"sigs.k8s.io/controller-runtime/pkg/envtest/komega"
+)
+
+const (
+	timeout = 10 * time.Second
 )
 
 var (
@@ -36,12 +44,16 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "vendor", "github.com", "openshift", "api", "machine", "v1")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "..", "vendor", "github.com", "openshift", "api", "machine", "v1"),
+			filepath.Join("..", "..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 
 	testScheme = scheme.Scheme
 	Expect(machinev1.Install(testScheme)).To(Succeed())
+	Expect(configv1.AddToScheme(testScheme)).To(Succeed())
 
 	var err error
 	cfg, err = testEnv.Start()
@@ -52,6 +64,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	komega.SetClient(k8sClient)
+	komega.SetContext(ctx)
 })
 
 var _ = AfterSuite(func() {
